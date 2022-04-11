@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: distributor
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:55001}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    listener:
+      simple:
+        retry:
+          enabled: true
+          initial-interval: 3s
+          max-attempts: 2
+          max-interval: 10s
+          multiplier: 2
+
+server:
+  port: ${PORT:50005}
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: ${EUREKA_URI:http://localhost:50001/eureka/}
+
+cloudUrls:
+  yandex: "https://cloud-api.yandex.net/v1"
+
+logging:
+  level:
+    root: DEBUG
+
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 30000
+        loggerLevel: ${FEIGN_LOG_LEVEL:BASIC}
