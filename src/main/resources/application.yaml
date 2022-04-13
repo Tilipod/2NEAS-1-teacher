@@ -1,6 +1,6 @@
 spring:
   application:
-    name: distributor
+    name: teacher
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:55001}
@@ -27,7 +27,7 @@ cloudUrls:
 
 logging:
   level:
-    root: DEBUG
+    root: INFO
 
 feign:
   client:
@@ -35,4 +35,4 @@ feign:
       default:
         connectTimeout: 5000
         readTimeout: 30000
-        loggerLevel: ${FEIGN_LOG_LEVEL:BASIC}
+        loggerLevel: ${FEIGN_LOG_LEVEL:NONE}
