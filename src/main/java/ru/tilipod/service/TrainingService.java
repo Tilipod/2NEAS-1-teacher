@@ -1,10 +1,8 @@
 package ru.tilipod.service;
 
-import org.springframework.web.multipart.MultipartFile;
+import ru.tilipod.controller.dto.TrainingDto;
 
 public interface TrainingService {
 
-    void stepTraining(Integer taskId, Integer countEpoch, Boolean saveResult);
-
-    String classifyImage(MultipartFile image);
+    void stepTraining(TrainingDto trainingDto);
 }

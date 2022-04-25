@@ -22,9 +22,6 @@ eureka:
     serviceUrl:
       defaultZone: ${EUREKA_URI:http://localhost:50001/eureka/}
 
-cloudUrls:
-  yandex: "https://cloud-api.yandex.net/v1"
-
 logging:
   level:
     root: INFO

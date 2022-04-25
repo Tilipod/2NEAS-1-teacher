@@ -78,8 +78,13 @@ public class AmqpConfig implements RabbitListenerConfigurer {
     }
 
     @Bean
-    public Exchange exchangeTeacher() {
-        return new DirectExchange(ExchangeNames.TEACHER);
+    public Exchange exchangeSuccess() {
+        return new DirectExchange(ExchangeNames.SUCCESS);
+    }
+
+    @Bean
+    public Exchange exchangeError() {
+        return new DirectExchange(ExchangeNames.ERROR);
     }
 
 }
