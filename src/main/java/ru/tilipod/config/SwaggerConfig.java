@@ -26,7 +26,7 @@ public class SwaggerConfig {
         return new ApiInfoBuilder()
                 .title("2NEAS-1-teacher")
                 .description("Учитель, отвечающий за обучение нейронных сетей")
-                .version("0.0.1")
+                .version("0.0.2")
                 .build();
     }
 
