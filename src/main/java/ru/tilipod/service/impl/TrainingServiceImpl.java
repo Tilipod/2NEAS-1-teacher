@@ -10,8 +10,6 @@ import org.deeplearning4j.datasets.datavec.RecordReaderDataSetIterator;
 import org.deeplearning4j.eval.Evaluation;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
 import org.deeplearning4j.util.ModelSerializer;
-import org.nd4j.linalg.api.ndarray.INDArray;
-import org.nd4j.linalg.dataset.SplitTestAndTrain;
 import org.nd4j.linalg.dataset.api.iterator.DataSetIterator;
 import org.nd4j.linalg.dataset.api.preprocessor.DataNormalization;
 import org.nd4j.linalg.dataset.api.preprocessor.ImagePreProcessingScaler;
@@ -33,9 +31,12 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class TrainingServiceImpl implements TrainingService {
 
+    private static final String PATH_TO_TRAIN = "/train";
+    private static final String PATH_TO_TEST = "/test";
+
     private final RabbitSender rabbitSender;
 
-    private SplitTestAndTrain createImageDatasetIter(String path, Double percentTrain, Integer countOutput) {
+    private DataSetIterator createImageDatasetIter(String path, Integer countOutput) {
         // Векторизация данных
         File file = new File(path);
         FileSplit datasetSplit = new FileSplit(file, NativeImageLoader.ALLOWED_FORMATS);
@@ -58,7 +59,7 @@ public class TrainingServiceImpl implements TrainingService {
         datasetIter.setPreProcessor(scaler);
         datasetIter.reset();
 
-        return datasetIter.next().splitTestAndTrain(percentTrain);
+        return datasetIter;
     }
 
     private MultiLayerNetwork loadNetwork(String pathToModel, Integer taskId) {
@@ -79,9 +80,17 @@ public class TrainingServiceImpl implements TrainingService {
         }
     }
 
-    private SplitTestAndTrain prepareDataset(TrainingDto trainingDto) {
+    private DataSetIterator prepareTrainDataset(TrainingDto trainingDto) {
         return switch (trainingDto.getDatasetType()) {
-            case IMAGE -> createImageDatasetIter(trainingDto.getPathToDataset(), trainingDto.getPercentTrain(), trainingDto.getCountOutput());
+            case IMAGE -> createImageDatasetIter(trainingDto.getPathToDataset().concat(PATH_TO_TRAIN), trainingDto.getCountOutput());
+            default -> throw new InvalidRequestException(String.format("Неподдерживаемый тип данных для обучения: %s. Задача с id = %d",
+                    trainingDto.getDatasetType(), trainingDto.getTaskId()), trainingDto.getTaskId());
+        };
+    }
+
+    private DataSetIterator prepareTestDataset(TrainingDto trainingDto) {
+        return switch (trainingDto.getDatasetType()) {
+            case IMAGE -> createImageDatasetIter(trainingDto.getPathToDataset().concat(PATH_TO_TEST), trainingDto.getCountOutput());
             default -> throw new InvalidRequestException(String.format("Неподдерживаемый тип данных для обучения: %s. Задача с id = %d",
                     trainingDto.getDatasetType(), trainingDto.getTaskId()), trainingDto.getTaskId());
         };
@@ -94,20 +103,20 @@ public class TrainingServiceImpl implements TrainingService {
             log.info("Начинаем обучение нейронной сети по задаче {}", trainingDto.getTaskId());
 
             MultiLayerNetwork net = loadNetwork(trainingDto.getPathToModel(), trainingDto.getTaskId());
-            SplitTestAndTrain splitTestAndTrain = prepareDataset(trainingDto);
+            DataSetIterator trainIter = prepareTrainDataset(trainingDto);
+            DataSetIterator testIter = prepareTestDataset(trainingDto);
 
             log.info("Подготовка данных по задаче {} завершена, начинаем обучение", trainingDto.getTaskId());
 
             for (int i = 1; i <= trainingDto.getCountEpoch(); i++) {
-                net.fit(splitTestAndTrain.getTrain());
+                net.fit(trainIter);
+                trainIter.reset();
                 log.info("Закончен {} шаг обучения нейронной сети по задаче {}", i, trainingDto.getTaskId());
             }
 
             log.info("Завершено обучение нейронной сети по задаче {}. Начинаем оценку точности", trainingDto.getTaskId());
 
-            INDArray output = net.output(splitTestAndTrain.getTest().getFeatureMatrix());
-            Evaluation eval = new Evaluation(3);
-            eval.eval(splitTestAndTrain.getTest().getLabels(), output);
+            Evaluation eval = net.evaluate(testIter);
 
             log.info("Текущая точность обучения сети по задаче {} составляет {}%", trainingDto.getTaskId(), eval.precision() * 100);
 
