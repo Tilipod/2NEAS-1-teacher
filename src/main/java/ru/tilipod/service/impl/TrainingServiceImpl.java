@@ -7,8 +7,11 @@ import org.datavec.api.split.FileSplit;
 import org.datavec.image.loader.NativeImageLoader;
 import org.datavec.image.recordreader.ImageRecordReader;
 import org.deeplearning4j.datasets.datavec.RecordReaderDataSetIterator;
+import org.deeplearning4j.eval.Evaluation;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
 import org.deeplearning4j.util.ModelSerializer;
+import org.nd4j.linalg.api.ndarray.INDArray;
+import org.nd4j.linalg.dataset.SplitTestAndTrain;
 import org.nd4j.linalg.dataset.api.iterator.DataSetIterator;
 import org.nd4j.linalg.dataset.api.preprocessor.DataNormalization;
 import org.nd4j.linalg.dataset.api.preprocessor.ImagePreProcessingScaler;
@@ -32,7 +35,7 @@ public class TrainingServiceImpl implements TrainingService {
 
     private final RabbitSender rabbitSender;
 
-    private DataSetIterator createImageDatasetIter(String path, Integer countOutput) {
+    private SplitTestAndTrain createImageDatasetIter(String path, Double percentTrain, Integer countOutput) {
         // Векторизация данных
         File file = new File(path);
         FileSplit datasetSplit = new FileSplit(file, NativeImageLoader.ALLOWED_FORMATS);
@@ -55,7 +58,7 @@ public class TrainingServiceImpl implements TrainingService {
         datasetIter.setPreProcessor(scaler);
         datasetIter.reset();
 
-        return datasetIter;
+        return datasetIter.next().splitTestAndTrain(percentTrain);
     }
 
     private MultiLayerNetwork loadNetwork(String pathToModel, Integer taskId) {
@@ -76,9 +79,9 @@ public class TrainingServiceImpl implements TrainingService {
         }
     }
 
-    private DataSetIterator prepareDataset(TrainingDto trainingDto) {
+    private SplitTestAndTrain prepareDataset(TrainingDto trainingDto) {
         return switch (trainingDto.getDatasetType()) {
-            case IMAGE -> createImageDatasetIter(trainingDto.getPathToDataset(), trainingDto.getCountOutput());
+            case IMAGE -> createImageDatasetIter(trainingDto.getPathToDataset(), trainingDto.getPercentTrain(), trainingDto.getCountOutput());
             default -> throw new InvalidRequestException(String.format("Неподдерживаемый тип данных для обучения: %s. Задача с id = %d",
                     trainingDto.getDatasetType(), trainingDto.getTaskId()), trainingDto.getTaskId());
         };
@@ -91,21 +94,26 @@ public class TrainingServiceImpl implements TrainingService {
             log.info("Начинаем обучение нейронной сети по задаче {}", trainingDto.getTaskId());
 
             MultiLayerNetwork net = loadNetwork(trainingDto.getPathToModel(), trainingDto.getTaskId());
-            DataSetIterator trainIter = prepareDataset(trainingDto);
+            SplitTestAndTrain splitTestAndTrain = prepareDataset(trainingDto);
 
             log.info("Подготовка данных по задаче {} завершена, начинаем обучение", trainingDto.getTaskId());
 
             for (int i = 1; i <= trainingDto.getCountEpoch(); i++) {
-                net.fit(trainIter);
-
+                net.fit(splitTestAndTrain.getTrain());
                 log.info("Закончен {} шаг обучения нейронной сети по задаче {}", i, trainingDto.getTaskId());
-
-                trainIter.reset();
             }
 
+            log.info("Завершено обучение нейронной сети по задаче {}. Начинаем оценку точности", trainingDto.getTaskId());
+
+            INDArray output = net.output(splitTestAndTrain.getTest().getFeatureMatrix());
+            Evaluation eval = new Evaluation(3);
+            eval.eval(splitTestAndTrain.getTest().getLabels(), output);
+
+            log.info("Текущая точность обучения сети по задаче {} составляет {}%", trainingDto.getTaskId(), eval.precision() * 100);
+
             saveNetwork(net, trainingDto.getPathToModel(), trainingDto.getTaskId());
-            rabbitSender.sendSuccessToScheduler(TeacherResultSuccessMessage.createMessage(trainingDto.getTaskId(), trainingDto.getPathToModel()));
-            log.info("Завершено обучение нейронной сети по задаче {}", trainingDto.getTaskId());
+            rabbitSender.sendSuccessToScheduler(TeacherResultSuccessMessage.createMessage(trainingDto.getTaskId(),
+                    trainingDto.getPathToModel(), eval.precision()));
         } catch (Exception e) {
             log.error("Ошибка обучения сети. Задача: {}, ошибка: {}", trainingDto.getTaskId(), e.getMessage());
             rabbitSender.sendErrorToScheduler(TeacherResultErrorMessage.createMessage(trainingDto.getTaskId(), e));

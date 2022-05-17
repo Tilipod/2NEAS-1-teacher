@@ -13,6 +13,9 @@ public class TrainingDto {
     @ApiModelProperty(value = "Тип данных для обучения сети", required = true)
     private DatasetTypeEnum datasetType;
 
+    @ApiModelProperty(value = "Процент данных для тренировки (остальный процент идет для тестирования)", required = true)
+    private Double percentTrain;
+
     @ApiModelProperty(value = "Кол-во эпох для обучения", required = true)
     private Integer countEpoch;
 
