@@ -2,6 +2,7 @@ package ru.tilipod.controller.dto;
 
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
+import org.deeplearning4j.rl4j.learning.sync.qlearning.QLearning;
 import ru.tilipod.controller.dto.enums.DatasetTypeEnum;
 
 @Data
@@ -24,4 +25,10 @@ public class TrainingDto {
 
     @ApiModelProperty(value = "Путь к модели сети", required = true)
     private String pathToModel;
+
+    @ApiModelProperty(value = "Количество состояний для обучения с подкреплением")
+    private Integer countStates;
+
+    @ApiModelProperty(value = "Конфигурация для обучения с подкреплением")
+    private QLearning.QLConfiguration reforcementConf;
 }

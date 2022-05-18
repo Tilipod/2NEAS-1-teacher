@@ -7,21 +7,17 @@ import org.datavec.api.split.FileSplit;
 import org.datavec.image.loader.NativeImageLoader;
 import org.datavec.image.recordreader.ImageRecordReader;
 import org.deeplearning4j.datasets.datavec.RecordReaderDataSetIterator;
-import org.deeplearning4j.eval.Evaluation;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
 import org.deeplearning4j.util.ModelSerializer;
 import org.nd4j.linalg.dataset.api.iterator.DataSetIterator;
 import org.nd4j.linalg.dataset.api.preprocessor.DataNormalization;
 import org.nd4j.linalg.dataset.api.preprocessor.ImagePreProcessingScaler;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import ru.tilipod.amqp.message.TeacherResultErrorMessage;
-import ru.tilipod.amqp.message.TeacherResultSuccessMessage;
 import ru.tilipod.controller.dto.TrainingDto;
 import ru.tilipod.exception.InvalidRequestException;
 import ru.tilipod.exception.SystemError;
-import ru.tilipod.service.RabbitSender;
-import ru.tilipod.service.TrainingService;
+import ru.tilipod.service.NetworkStorageHelper;
+import ru.tilipod.util.Constants;
 
 import java.io.File;
 import java.io.IOException;
@@ -29,12 +25,7 @@ import java.io.IOException;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class TrainingServiceImpl implements TrainingService {
-
-    private static final String PATH_TO_TRAIN = "/train";
-    private static final String PATH_TO_TEST = "/test";
-
-    private final RabbitSender rabbitSender;
+public class NetworkStorageHelperImpl implements NetworkStorageHelper {
 
     private DataSetIterator createImageDatasetIter(String path, Integer countOutput) {
         // Векторизация данных
@@ -62,7 +53,8 @@ public class TrainingServiceImpl implements TrainingService {
         return datasetIter;
     }
 
-    private MultiLayerNetwork loadNetwork(String pathToModel, Integer taskId) {
+    @Override
+    public MultiLayerNetwork loadNetwork(String pathToModel, Integer taskId) {
         try {
             return ModelSerializer.restoreMultiLayerNetwork(pathToModel);
         } catch (IOException e) {
@@ -71,7 +63,8 @@ public class TrainingServiceImpl implements TrainingService {
         }
     }
 
-    private void saveNetwork(MultiLayerNetwork net, String pathToSave, Integer taskId) {
+    @Override
+    public void saveNetwork(MultiLayerNetwork net, String pathToSave, Integer taskId) {
         try {
             ModelSerializer.writeModel(net, pathToSave, true);
         } catch (IOException e) {
@@ -80,52 +73,21 @@ public class TrainingServiceImpl implements TrainingService {
         }
     }
 
-    private DataSetIterator prepareTrainDataset(TrainingDto trainingDto) {
+    @Override
+    public DataSetIterator prepareTrainDataset(TrainingDto trainingDto) {
         return switch (trainingDto.getDatasetType()) {
-            case IMAGE -> createImageDatasetIter(trainingDto.getPathToDataset().concat(PATH_TO_TRAIN), trainingDto.getCountOutput());
-            default -> throw new InvalidRequestException(String.format("Неподдерживаемый тип данных для обучения: %s. Задача с id = %d",
-                    trainingDto.getDatasetType(), trainingDto.getTaskId()), trainingDto.getTaskId());
-        };
-    }
-
-    private DataSetIterator prepareTestDataset(TrainingDto trainingDto) {
-        return switch (trainingDto.getDatasetType()) {
-            case IMAGE -> createImageDatasetIter(trainingDto.getPathToDataset().concat(PATH_TO_TEST), trainingDto.getCountOutput());
+            case IMAGE -> createImageDatasetIter(trainingDto.getPathToDataset().concat(Constants.PATH_TO_TRAIN), trainingDto.getCountOutput());
             default -> throw new InvalidRequestException(String.format("Неподдерживаемый тип данных для обучения: %s. Задача с id = %d",
                     trainingDto.getDatasetType(), trainingDto.getTaskId()), trainingDto.getTaskId());
         };
     }
 
     @Override
-    @Async
-    public void stepTraining(TrainingDto trainingDto) {
-        try {
-            log.info("Начинаем обучение нейронной сети по задаче {}", trainingDto.getTaskId());
-
-            MultiLayerNetwork net = loadNetwork(trainingDto.getPathToModel(), trainingDto.getTaskId());
-            DataSetIterator trainIter = prepareTrainDataset(trainingDto);
-            DataSetIterator testIter = prepareTestDataset(trainingDto);
-
-            log.info("Подготовка данных по задаче {} завершена, начинаем обучение", trainingDto.getTaskId());
-
-            for (int i = 1; i <= trainingDto.getCountEpoch(); i++) {
-                net.fit(trainIter);
-                trainIter.reset();
-                log.info("Закончен {} шаг обучения нейронной сети по задаче {}", i, trainingDto.getTaskId());
-            }
-
-            log.info("Завершено обучение нейронной сети по задаче {}. Начинаем оценку точности", trainingDto.getTaskId());
-
-            Evaluation eval = net.evaluate(testIter);
-
-            log.info("Текущая точность обучения сети по задаче {} составляет {}%", trainingDto.getTaskId(), eval.precision() * 100);
-
-            saveNetwork(net, trainingDto.getPathToModel(), trainingDto.getTaskId());
-            rabbitSender.sendSuccessToScheduler(TeacherResultSuccessMessage.createMessage(trainingDto.getTaskId(),
-                    trainingDto.getPathToModel(), eval.precision()));
-        } catch (Exception e) {
-            log.error("Ошибка обучения сети. Задача: {}, ошибка: {}", trainingDto.getTaskId(), e.getMessage());
-            rabbitSender.sendErrorToScheduler(TeacherResultErrorMessage.createMessage(trainingDto.getTaskId(), e));
-        }
+    public DataSetIterator prepareTestDataset(TrainingDto trainingDto) {
+        return switch (trainingDto.getDatasetType()) {
+            case IMAGE -> createImageDatasetIter(trainingDto.getPathToDataset().concat(Constants.PATH_TO_TEST), trainingDto.getCountOutput());
+            default -> throw new InvalidRequestException(String.format("Неподдерживаемый тип данных для обучения: %s. Задача с id = %d",
+                    trainingDto.getDatasetType(), trainingDto.getTaskId()), trainingDto.getTaskId());
+        };
     }
 }
